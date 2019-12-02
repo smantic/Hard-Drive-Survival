@@ -4,9 +4,54 @@ import os
 import sqlite3
 import multiprocessing
 import concurrent.futures 
+from lifelines import KaplanMeierFitter
+import datetime
 
 #we already have each row as an input. 
 #what we need is the drive's alive time.
+
+
+#probablity density function.
+def pdf( t ): 
+
+    conn = sqlite3.connect("./survival.db")
+    c = conn.cursor()
+    
+    numDead = c.execute( "SELECT COUNT(*) FROM Survival WHERE DaysAlive < ?", (t,) ).fetchAll()
+    numTotal = c.execute( "SELECT COUNT(*) FROM Survival" ).fetchAll() 
+
+    return numDead // numTotal 
+
+
+def survival( t ): 
+    return 1 - pdf( t ) 
+
+
+# gives the risk of dying at time t. 
+def harzard( t ): 
+    return pdf(t)  // survival(t) 
+
+def KCM( t ): 
+    
+    conn = sqlite3.connect("./survival.db")
+    c = conn.cursor()
+
+    durations = c.execute( "SELECT MAX( DaysAlive ) FROM Survival"  ).fetchAll()
+
+
+    return 0
+
+
+def eventOccured( hardDrive, lastDate ): 
+
+    conn = sqlite3.connect("./survival.db")
+    c = conn.cursor()
+
+    date = c.execute( "SELECT Date FROM Survival WHERE SerialNumber=?", ( hardDrive,)  ).fetchAll()
+    daysAlive = c.execute( "SELECT DaysAlive FROM Survival WHERE SerialNumber = ?", (hardDrive,) ).fetchAll()
+    startTime = datetime.datetime.strptime(date, '%Y-%m-%d')
+
+    
 
 
 def collectPaths(start): 
@@ -57,6 +102,7 @@ def run( path ):
             fields = line.split(",")
             serialNumber = fields[1]
             failure = fields[4]
+            date = fields[0]
             
             #if it is alive, update it's time alive. 
             if int(failure) == 0: 
@@ -68,7 +114,7 @@ def run( path ):
                     c.execute( "UPDATE survival SET DaysAlive = DaysAlive + 1 where SerialNumber = ?", (serialNumber,))
 
                 else: 
-                    c.execute("INSERT INTO survival VALUES(?,?)", (serialNumber,1))
+                    c.execute("INSERT INTO survival VALUES(?,?,?)", (date, serialNumber,1))
 
 
     conn.commit()
