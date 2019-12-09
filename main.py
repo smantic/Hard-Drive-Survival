@@ -1,14 +1,12 @@
-#! /usr/bin/python3.7
+#! /usr/bin/python3.6
 
+import graphs 
 import os 
 import sqlite3
 import multiprocessing
 import concurrent.futures 
 from lifelines import KaplanMeierFitter
 import datetime
-
-#we already have each row as an input. 
-#what we need is the drive's alive time.
 
 
 #probablity density function.
@@ -42,14 +40,47 @@ def KCM( t ):
     return 0
 
 
-def eventOccured( hardDrive, lastDate ): 
+def eventOccured(): 
 
     conn = sqlite3.connect("./survival.db")
     c = conn.cursor()
 
-    date = c.execute( "SELECT Date FROM Survival WHERE SerialNumber=?", ( hardDrive,)  ).fetchAll()
-    daysAlive = c.execute( "SELECT DaysAlive FROM Survival WHERE SerialNumber = ?", (hardDrive,) ).fetchAll()
-    startTime = datetime.datetime.strptime(date, '%Y-%m-%d')
+    lastDate = c.execute( "SELECT FirstDate FROM Survival ORDER BY DATE(FirstDate) DESC LIMIT 1").fetchAll()
+    print(lastDate.rowcount)
+
+    hds = c.execute( "SELECT FirstDate, SerialNumber, DaysAlive FROM Survival")
+    
+    for (dateStr, serialNumber, daysAlive) in hds:
+        startDate = datetime.datetime.strptime(date, '%Y/%m/%d')
+
+        #add on days Alive to see if hardDrive has died.
+        print(startDate) 
+
+    c.close()
+    conn.close()
+        
+
+
+
+
+
+def collectDurationsAndEvents( ): 
+
+    conn = sqlite3.connect("./survival.db")
+    c = conn.cursor()
+
+    qresult = c.execute( "SELECT DaysAlive FROM Survival" ).fetchall()
+    durations = [ qresult[i][0] for i in range(0, len( qresult )) ] 
+
+    eventOccured() 
+
+    #graphs.createSurvivalGraph( durations, eventOccurred)
+    #graphs.createHazardGraph(durations, eventOccurred)
+
+    c.close()
+    conn.close()
+
+
 
     
 
@@ -72,9 +103,21 @@ def collectPaths(start):
 
 
 
-
-
 def main(): 
+    paths = collectPaths("./data")
+
+    print("collecting duration from " + paths[0]) 
+
+    run(paths[1])
+    run(paths[2])
+    #run(paths[10])
+    collectDurationsAndEvents()
+
+
+
+
+
+def main2(): 
     paths = collectPaths("./data")
 
     executor = concurrent.futures.ProcessPoolExecutor(10)
@@ -107,14 +150,14 @@ def run( path ):
             #if it is alive, update it's time alive. 
             if int(failure) == 0: 
 
-                qresult = c.execute( "SELECT * FROM survival WHERE SerialNumber = ?", (serialNumber,)).fetchall()
+                qresult = c.execute( "SELECT * FROM Survival WHERE SerialNumber = ?", (serialNumber,)).fetchall()
 
                 #if we already have an entry for this drive. 
                 if len(qresult) > 0: 
-                    c.execute( "UPDATE survival SET DaysAlive = DaysAlive + 1 where SerialNumber = ?", (serialNumber,))
+                    c.execute( "UPDATE Survival SET DaysAlive = DaysAlive + 1 where SerialNumber = ?", (serialNumber,))
 
                 else: 
-                    c.execute("INSERT INTO survival VALUES(?,?,?)", (date, serialNumber,1))
+                    c.execute("INSERT INTO Survival VALUES(?,?,?)", ( date, serialNumber,1))
 
 
     conn.commit()
