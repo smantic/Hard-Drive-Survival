@@ -18,6 +18,9 @@ def pdf( t ):
     numDead = c.execute( "SELECT COUNT(*) FROM Survival WHERE DaysAlive < ?", (t,) ).fetchAll()
     numTotal = c.execute( "SELECT COUNT(*) FROM Survival" ).fetchAll() 
 
+    c.close()
+    conn.close()
+
     return numDead // numTotal 
 
 
@@ -34,34 +37,44 @@ def KCM( t ):
     conn = sqlite3.connect("./survival.db")
     c = conn.cursor()
 
-    durations = c.execute( "SELECT MAX( DaysAlive ) FROM Survival"  ).fetchAll()
+    durations = c.execute( "SELECT MAX( DaysAlive ) FROM Survival"  ).fetchall()
 
+    c.close()
+    conn.close()
 
     return 0
 
 
-def eventOccured(): 
+#to be run after collecting all days alive. 
+def updateEventOccured(): 
 
     conn = sqlite3.connect("./survival.db")
     c = conn.cursor()
 
-    lastDate = c.execute( "SELECT FirstDate FROM Survival ORDER BY DATE(FirstDate) DESC LIMIT 1").fetchAll()
-    print(lastDate.rowcount)
+    lastDateStr= c.execute( "SELECT MAX(firstDate) FROM Survival").fetchall()[0][0]
+    lastDate = datetime.datetime.strptime( lastDateStr, '%Y-%m-%d')
+    
 
-    hds = c.execute( "SELECT FirstDate, SerialNumber, DaysAlive FROM Survival")
+    hds = c.execute( "SELECT FirstDate, SerialNumber, DaysAlive FROM Survival").fetchall()
     
     for (dateStr, serialNumber, daysAlive) in hds:
-        startDate = datetime.datetime.strptime(date, '%Y/%m/%d')
+        startDate = datetime.datetime.strptime(dateStr, '%Y-%m-%d')
 
         #add on days Alive to see if hardDrive has died.
-        print(startDate) 
+        endDate = startDate + datetime.timedelta(days=daysAlive)
+        endDateStr = endDate.strftime('%Y-%m-%d')
+        timeDelta = lastDate - endDate 
+
+        #if the difference is greater than one day.
+        if timeDelta.total_seconds() > 86400: 
+            eventOccured = 1
+        else: 
+            eventOccured = 0
+
+        c.execute( "UPDATE Survival SET endDate = ?, eventOccurred = ? where SerialNumber = ?", (endDateStr, eventOccured, serialNumber))
 
     c.close()
     conn.close()
-        
-
-
-
 
 
 def collectDurationsAndEvents( ): 
@@ -72,13 +85,14 @@ def collectDurationsAndEvents( ):
     qresult = c.execute( "SELECT DaysAlive FROM Survival" ).fetchall()
     durations = [ qresult[i][0] for i in range(0, len( qresult )) ] 
 
-    eventOccured() 
 
     #graphs.createSurvivalGraph( durations, eventOccurred)
     #graphs.createHazardGraph(durations, eventOccurred)
 
     c.close()
     conn.close()
+
+
 
 
 
@@ -110,7 +124,8 @@ def main():
 
     run(paths[1])
     run(paths[2])
-    #run(paths[10])
+    run(paths[10])
+    updateEventOccured()
     collectDurationsAndEvents()
 
 
@@ -146,6 +161,8 @@ def run( path ):
             serialNumber = fields[1]
             failure = fields[4]
             date = fields[0]
+            model = fields[2]
+            capacity = fields[3] 
             
             #if it is alive, update it's time alive. 
             if int(failure) == 0: 
@@ -157,7 +174,8 @@ def run( path ):
                     c.execute( "UPDATE Survival SET DaysAlive = DaysAlive + 1 where SerialNumber = ?", (serialNumber,))
 
                 else: 
-                    c.execute("INSERT INTO Survival VALUES(?,?,?)", ( date, serialNumber,1))
+                    #last column is last date, will be added later. 
+                    c.execute("INSERT INTO Survival VALUES(?,?,?,?,?,?,?)", ( date, serialNumber, model, capacity, 1, "0", "" ))
 
 
     conn.commit()
