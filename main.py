@@ -71,7 +71,7 @@ def updateEventOccured():
         else: 
             eventOccured = 0
 
-        c.execute( "UPDATE Survival SET endDate = ?, eventOccurred = ? where SerialNumber = ?", (endDateStr, eventOccured, serialNumber))
+        c.execute( "UPDATE Survival SET lastDate = ?, eventOccured = ? where SerialNumber = ?", (endDateStr, eventOccured, serialNumber))
 
     c.close()
     conn.close()
@@ -122,9 +122,9 @@ def main():
 
     print("collecting duration from " + paths[0]) 
 
-    run(paths[1])
-    run(paths[2])
-    run(paths[10])
+    #run(paths[1])
+    #run(paths[2])
+    #run(paths[10])
     updateEventOccured()
     collectDurationsAndEvents()
 
