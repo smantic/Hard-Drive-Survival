@@ -7,6 +7,8 @@ import multiprocessing
 import concurrent.futures 
 from lifelines import KaplanMeierFitter
 import datetime
+import random
+import pandas
 
 
 #probablity density function.
@@ -15,8 +17,8 @@ def pdf( t ):
     conn = sqlite3.connect("./survival.db")
     c = conn.cursor()
     
-    numDead = c.execute( "SELECT COUNT(*) FROM Survival WHERE DaysAlive < ?", (t,) ).fetchAll()
-    numTotal = c.execute( "SELECT COUNT(*) FROM Survival" ).fetchAll() 
+    numDead = c.execute( "SELECT COUNT(*) FROM Survival WHERE DaysAlive < ?", (t,) ).fetchall()
+    numTotal = c.execute( "SELECT COUNT(*) FROM Survival" ).fetchall() 
 
     c.close()
     conn.close()
@@ -37,7 +39,7 @@ def KCM( t ):
     conn = sqlite3.connect("./survival.db")
     c = conn.cursor()
 
-    durations = c.execute( "SELECT MAX( DaysAlive ) FROM Survival"  ).fetchall()
+    durations = c.execute( "SELECT MAX( daysAlive ) FROM Survival"  ).fetchall()
 
     c.close()
     conn.close()
@@ -48,6 +50,7 @@ def KCM( t ):
 #to be run after collecting all days alive. 
 def updateEventOccured(): 
 
+    print("updating lastDate feilds")
     conn = sqlite3.connect("./survival.db")
     c = conn.cursor()
 
@@ -55,7 +58,7 @@ def updateEventOccured():
     lastDate = datetime.datetime.strptime( lastDateStr, '%Y-%m-%d')
     
 
-    hds = c.execute( "SELECT FirstDate, SerialNumber, DaysAlive FROM Survival").fetchall()
+    hds = c.execute( "SELECT firstDate, serialNumber, daysAlive FROM Survival").fetchall()
     
     for (dateStr, serialNumber, daysAlive) in hds:
         startDate = datetime.datetime.strptime(dateStr, '%Y-%m-%d')
@@ -73,30 +76,11 @@ def updateEventOccured():
 
         c.execute( "UPDATE Survival SET lastDate = ?, eventOccured = ? where SerialNumber = ?", (endDateStr, eventOccured, serialNumber))
 
+    conn.commit()
     c.close()
     conn.close()
 
 
-def collectDurationsAndEvents( ): 
-
-    conn = sqlite3.connect("./survival.db")
-    c = conn.cursor()
-
-    qresult = c.execute( "SELECT DaysAlive FROM Survival" ).fetchall()
-    durations = [ qresult[i][0] for i in range(0, len( qresult )) ] 
-
-
-    #graphs.createSurvivalGraph( durations, eventOccurred)
-    #graphs.createHazardGraph(durations, eventOccurred)
-
-    c.close()
-    conn.close()
-
-
-
-
-
-    
 
 
 def collectPaths(start): 
@@ -117,31 +101,46 @@ def collectPaths(start):
 
 
 
+def createGraphs(): 
+    #filename = "./aggergated.csv"
+    #n = sum(1 for line in open(filename)) - 1 #number of records in file (excludes header)
+    #s = 10000 #desired sample size
+    #skip = sorted(random.sample(range(1,n+1),n-s)) #the 0-indexed header will not be included in the skip list
+    #df = pandas.read_csv(filename, skiprows=skip)
+
+
+    #graphs.histogram("daysAlive")
+    #graphs.histogramCSV("smart_2_normalized", df)
+    #graphs.histogramCSV("smart_9_normalized", df)
+    #graphs.histogramCSV("smart_200_normalized", df)
+    #graphs.normalProbablityPlot()
+    graphs.createSurvivalGraphs()
+    print("Average tenure is: " + str(graphs.averageTenure()))
+    graphs.createSubSurvialGraph( "model", "ST4000DM000")
+    graphs.createSubSurvialGraph( "capacity", 4000787030016 ) 
+
+
+def main2():
+
+    #updateEventOccured()
+    createGraphs()
+
+
+
 def main(): 
     paths = collectPaths("./data")
-
-    print("collecting duration from " + paths[0]) 
-
-    #run(paths[1])
-    #run(paths[2])
-    #run(paths[10])
-    updateEventOccured()
-    collectDurationsAndEvents()
-
-
-
-
-
-def main2(): 
-    paths = collectPaths("./data")
-
-    executor = concurrent.futures.ProcessPoolExecutor(10)
-    futures = [] 
     for path in paths: 
-        future = executor.submit( run, path )
-        futures.append( future ) 
+        run( path )
 
-    concurrent.futures.wait(futures)
+    updateEventOccured()
+
+    #executor = concurrent.futures.ProcessPoolExecutor(10)
+    #futures = [] 
+    #for path in paths: 
+    #    future = executor.submit( run, path )
+    #    futures.append( future ) 
+
+    #concurrent.futures.wait(futures, timeout=None, return_when=concurrent.futures.ALL_COMPLETED)
 
 
 #Collect the following information 
@@ -149,6 +148,8 @@ def main2():
 #   -Alive? 
 def run( path ): 
 
+
+    print("collecting data from " + path) 
     conn = sqlite3.connect("./survival.db")
     c = conn.cursor()
     
@@ -167,20 +168,24 @@ def run( path ):
             #if it is alive, update it's time alive. 
             if int(failure) == 0: 
 
-                qresult = c.execute( "SELECT * FROM Survival WHERE SerialNumber = ?", (serialNumber,)).fetchall()
+                qresult = c.execute( "SELECT * FROM Survival WHERE serialNumber = ?", (serialNumber,)).fetchall()
+
 
                 #if we already have an entry for this drive. 
                 if len(qresult) > 0: 
-                    c.execute( "UPDATE Survival SET DaysAlive = DaysAlive + 1 where SerialNumber = ?", (serialNumber,))
+                    daysAlive = int(qresult[0][4])
+
+                    os.system('clear')
+                    print("In: \t " + path ) 
+                    print("updating "+ serialNumber + "\tto " + str(daysAlive+1)   )
+                    c.execute( "UPDATE Survival SET daysAlive = ? where serialNumber = ?", (daysAlive +1, serialNumber,))
 
                 else: 
                     #last column is last date, will be added later. 
-                    c.execute("INSERT INTO Survival VALUES(?,?,?,?,?,?,?)", ( date, serialNumber, model, capacity, 1, "0", "" ))
-
+                    c.execute("INSERT INTO Survival VALUES(?,?,?,?,?,?,?)", ( date, serialNumber, model, capacity, 1, 0, "" ))
 
     conn.commit()
     c.close()
     conn.close()
 
-
-main()
+main2()
