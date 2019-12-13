@@ -81,12 +81,35 @@ def updateEventOccured():
     conn.close()
 
 
+def writeDaysAliveToDB( result ): 
+    conn = sqlite3.connect("./survival.db")
+    c = conn.cursor()
+
+    for (serialNumber, count) in result: 
+        print("writing lastDate feilds")
+        c.execute( "UPDATE Survival SET daysAlive=? WHERE serialNumber=?", (count, serialNumber))
+
+    conn.commit()
+    c.close()
+    conn.close()
+
+
+
+
+def collectHardDriveDesc( paths, result ):
+
+    #after all the csvs have been consoladated into one.
+    q = '''CREATE TABLE HardDrives AS
+            SELECT DISTINCT serial_number, model, capacity_bytes
+            FROM all.csv'''
+
+    return None
+
 
 
 def collectPaths(start): 
 
     def recHelper( path, result ): 
-
         if (os.path.isdir( path ) is False):
             result.append( path ) 
             return result 
@@ -129,18 +152,22 @@ def main2():
 
 def main(): 
     paths = collectPaths("./data")
+    result = {} 
+
+    executor = concurrent.futures.ProcessPoolExecutor(10)
+    futures = [] 
     for path in paths: 
-        run( path )
+        future = executor.submit( run, path )
+        futures.append( future ) 
+
+    for fs in concurrent.futures.as_completed(futures, timeout=None):
+        for (serialNumber, count) in fs: 
+            prev = result.setDefault( serialNumber, 0)
+            result[serialNumber] = prev + 1
+
+    writeDaysAliveToDB( result )
 
     updateEventOccured()
-
-    #executor = concurrent.futures.ProcessPoolExecutor(10)
-    #futures = [] 
-    #for path in paths: 
-    #    future = executor.submit( run, path )
-    #    futures.append( future ) 
-
-    #concurrent.futures.wait(futures, timeout=None, return_when=concurrent.futures.ALL_COMPLETED)
 
 
 #Collect the following information 
@@ -150,42 +177,25 @@ def run( path ):
 
 
     print("collecting data from " + path) 
-    conn = sqlite3.connect("./survival.db")
-    c = conn.cursor()
+    result = {} 
     
     with open(path) as f: 
         next(f)
         for line in f: 
 
             #we want the drive serial number, and whether the drive is alive. Index 1 and 4.
-            fields = line.split(",")
-            serialNumber = fields[1]
-            failure = fields[4]
-            date = fields[0]
-            model = fields[2]
-            capacity = fields[3] 
+
             
             #if it is alive, update it's time alive. 
             if int(failure) == 0: 
+                os.system('clear')
+                print("In: \t " + path ) 
+                print("updating "+ serialNumber + "\tto " + str(daysAlive+1)   )
 
-                qresult = c.execute( "SELECT * FROM Survival WHERE serialNumber = ?", (serialNumber,)).fetchall()
+                prev = result.setdefault(serialNumber, 0)
+                result[serialNumber] = prev + 1
+
+    return result
 
 
-                #if we already have an entry for this drive. 
-                if len(qresult) > 0: 
-                    daysAlive = int(qresult[0][4])
-
-                    os.system('clear')
-                    print("In: \t " + path ) 
-                    print("updating "+ serialNumber + "\tto " + str(daysAlive+1)   )
-                    c.execute( "UPDATE Survival SET daysAlive = ? where serialNumber = ?", (daysAlive +1, serialNumber,))
-
-                else: 
-                    #last column is last date, will be added later. 
-                    c.execute("INSERT INTO Survival VALUES(?,?,?,?,?,?,?)", ( date, serialNumber, model, capacity, 1, 0, "" ))
-
-    conn.commit()
-    c.close()
-    conn.close()
-
-main2()
+main()
